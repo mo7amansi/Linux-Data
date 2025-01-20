@@ -1,12 +1,50 @@
 ## Firewalld
     {
-
+        
     }
 
 **************************************
 
 ## SELinux
     {
+        sestatus    #ESLinux status have 3 modes (enforcing, permissive, disabled)
+        setenforce 1    #enforcing  @ runtime
+        setenforce 0    #permissive @ runtime
+        vim /etc/selinux/config     #config. file (for permanent)
+
+        ls -lZ      #List context
+        ps -Z       #List precesses context
+        vim /etc/selinux/targeted/contexts/files/file_contexts      #Contexts naming (DB)
+        
+        chcon -t "httpd_sys_content_t" /mnt/website     #changing context @ runtime
+        restorecon -v /mnt/website                      #restore default context based on Contexts naming (DB)
+
+
+        semanage fcontext -a -t "httpd_sys_content_t" '/mnt/website(/.*)?'      #changing context (permanent)
+        restorecon -vR /mnt/website                     #Ensures the new context is applied
+
+        semanage port -a -t "http_port_t" -p tcp 82     
+        semanage -lC        #show modification that are changed
+
+        #To override an existing port that was already created, use the -m option
+        semanage port -m -t unreserved_port_t -p tcp 2222
+
+        semanage permissive -a httpd_t                  #SELinux will be permissive for apache only
+        semanage permissive -d httpd_t                  #To delete it again 
+        semanage permissive -l
+
+        --------------------------------------
+
+        @SELinux_Booleans
+
+        semanage booleans -l                        #List SELinux booleans
+        setsebool -P  <boolean>   on/off            #Enable or disable a SELinux boolean. (permanent)
+
+        --------------------------------------
+
+        ausearch -m AVC -ts recent                  #search inside audit.log
+        sealert  -a /var/log/audit/audit.log        #search inside audit.log as a report form
+
         
     }
 
