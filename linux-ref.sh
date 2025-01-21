@@ -5,6 +5,172 @@
 
 **************************************
 
+## Networking
+    {
+        # Check Network status
+            ifconfig
+            ip addr
+            ip route
+            netstat -nr
+
+        /etc/NetworkManager/system-connections      # where NetworkManager stores configuration files for network connections.
+
+        # nmcli tool
+            nmcli general permissions   # display user's permissions for managing network
+            nmcli dev  show
+            nmcli conn show
+
+            # add new connection
+            nmcli conn add test-con test type ethernet ifname enp0s3 ipv4.method manual ipv4.addresses 192.168.1.50 ipv4.gateway 192.168.1.1 autoconnect yes
+            nmcli conn up test-con
+            
+            nmcli conn down   test-con
+            nmcli conn delete test-conn
+
+            # modify connection
+            nmcli conn modify test-con +ipv4.addresses 192.168.1.90     # + sign to add second property e.x. second ip
+            or
+
+            cd /etc/NetworkManager/system-connections        # vim conn file for test-con and edit it
+            nmcli con reload test-con                        # if it isn't affected then do >> nmcli con down test-con & nmcli con up test-con
+
+        # Network Troubleshooting
+            ifconfig -a                 # check physical connection
+            ethtool  [interface]
+            mii-tool [interface]
+                # o/p should be link ok.
+
+            route -n                    # show route table and should specify default gateway
+                route add default gw 192.168.1.1        # if default gw not exist
+
+            try ping google.com         # should response if not do next step
+            vim /etc/resolve.conf
+                - nameserver 8.8.8.8
+
+            vim /etc/nsswitch.conf      # we found hosts: files  dns  myhostname
+                # files >> /etc/hosts , dns >> /etc/resolve.conf
+                # it means when doing ping command it check with this order and we can change it.
+        
+        netstat -ltpn   # show ports where services are listen
+
+        **************************************
+
+        ## How to configure Network Bonding  >>  combine physical and virtual network interfaces to provide a logical interface.
+        # 1- create bond connection
+        nmcli conn add type bond con-name bond0 ifname bond0 mode active-backup
+
+        #2- add slaves NICs to Bond at least 2 NICs
+        nmcli conn add type ethernet port-type bond con-name bond0-port1 ifname enp0s3 controller bond0
+        nmcli conn add type ethernet port-type bond con-name bond0-port2 ifname enp0s8 controller bond0
+
+        nmcli conn modify bridge0 controller bond0  # if there are profiles for slaves
+        nmcli conn modify bridge1 controller bond0
+
+        #3- reactive connections
+        nmcli conn up bridge0
+        nmcli conn up bridge1
+
+        #4- assign ip for bond
+        nmcli conn modify bond0 ipv4.method manual ipv4.addresses 192.0.2.1/24  ipv4.gateway 192.0.2.254
+
+        nmcli conn up bond0
+
+    }
+
+**************************************
+
+## Yum
+    {
+        yum search  httpd
+        yum install httpd
+        yum update  httpd
+        yum remove  httpd
+        yum list installed
+        yum check-update                # list packages that have available updates
+        yum localinstall [/path.rpm]    # install RPM package file located in local machine
+
+        /etc/yum.conf                   # main configuration file
+        /etc/yum.repos.d                # this directory contain all local repos that yum search from it and we can open any one and edit on it maybe we can disable someone ^_^
+
+        ## How to declare new repo?
+            1- vim /etc/yum.repos.d/myrepo.repo
+                [myrepo]
+                name=My Repository
+                baseurl=http://example.com/repo                              # baseurl is the location of the repository's files. E.X. HTTP/HTTPS: http://example.com/repo/ or  FTP: ftp://repo.example.com/repo/   or  Local Path: file:///mnt/myrepo/
+                enabled=1
+                gpgcheck=1
+                gpgkey=http://<server_IP_or_URL>/path_to_repo/RPM-GPG-KEY    # we can miss this one if we don't need to check package verification
+            
+            2- yum clean all            # To ensure YUM fetches fresh metadata and packages from repositories.
+            3- yum repolist
+
+        yum-config-manager --add-repo "http://example.com/repo"   # simple way to add new repo without manually editing .repo files.
+        yum-config-manager --enable/disable [repo_id]             # enable or disable repo. & i can get repo id from >> yum repolist
+
+        ## manage group of packages
+            yum grouplist
+            yum groupinstall "group_name"
+            yum groupremove  "group_name"
+
+        yum history             # view the history of installed, removed, or updated packages.
+        yum history undo [id]   # undo a specific transaction.
+    
+    }
+
+**************************************
+
+## Scheduling
+    {
+        @crond      # for repeated tasks
+
+        crontab -l          # list cron scheduled
+        crontab -r          # remove current cron
+        crontab -e          # create or modify cron
+        crontab -e -u user  # create or modify cron for another user
+
+        # E.X.  
+        crontab -e
+              *      *           *            *          *      /script  or  command
+            minute  hour    day-in-month    month   day-in-weak
+            (0-59) (0-23)      (1-31)       (1-12)     (0-7)        # 0,7 == sunday
+
+            *       *   *   *   *   # every minute
+            0       *   *   *   *   # every hour
+            */10    *   *   *   *   # every 10 minute
+            0       17  *   *   0   # every sunday @ 5 p.m.
+
+            @yearly @monthly ...    # start of year, month,...
+            @reboot                 # every reboot
+
+        vim /etc/cron.deny          # to deny user for using scheduling
+        vim /etc/cron.allow         # to allow only these users using scheduling
+
+        vim /etc/cron.daily         # run tasks daily
+        vim /etc/cron.weekly        # run tasks weekly
+        .
+        .
+        --------------------------------------
+
+        @atd      # run tasks one time
+
+        at -l           # list jobs
+        at -r [job_id]  # remove job
+
+        ## How to create job?
+
+        1- using at prompt
+            at +time         # time = 23:17, noon, 6AM, noon + 4 days,...
+                # will open terminal >> write the command then "CTRL+d"
+        
+        2- using pipe
+            echo "date > /home/mansi/test" | at now
+
+        at -c [job_id]       # job scripts == /var/spool/at
+
+    }
+
+**************************************
+
 ## Logs
     {
         @rsyslog    # read logs from journald and storing under /var/log
@@ -48,11 +214,12 @@
         
         @Journald
 
-        journalctl              # list all logs
-        journalctl -n 15        # last 15 logs
-        journalctl -p err       # just err logs (priority)
+        journalctl                      # list all logs
+        journalctl -u NetworkManager    # list NetworkManager logs
+        journalctl -n 15                # last 15 logs
+        journalctl -p err               # just err logs (priority)
         
-        vim /run/log/journal    # stored logs & it's not persistent (temporary)
+        vim /run/log/journal            # stored logs & it's not persistent (temporary)
 
         ## How to make journald logs persistent
 
