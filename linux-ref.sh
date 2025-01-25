@@ -7,15 +7,10 @@
 
 ## Storage
     {
-        @parted
-
-        
-
-        --------------------------------------
-
         @fdisk
 
         fdisk -l /dev/sda           # list disk info.
+        lsblk -pf                   # list partitions & filesystem.
 
         ## Create partition and make file system
             fdisk /dev/sda                              # create new partition
@@ -66,7 +61,43 @@
 
         --------------------------------------
 
+        @parted     # for partitioning & NOTE: it affected immediately!!!
+
+        ## create partition
+            parted /dev/sda                 # will open interactive session & go through instruction steps
+                print                       # show disk details
+                mklabel msdos               # partitioning schema: MBR > msdos && GPT > gpt
+                mkpart                      # to make partition and go through instructions
+                                                # start >> 0%
+                                                # end   >> 25%     # partition size is 25% disk size
+                
+                unit % or GB or MB ...      # then print >> will show partition size with selected unit
+
+            mkfs -t ext4 /dev/sda1
+            mount /dev/sda1 /mnt/data1
+
+            # for permanent
+            vim /etc/fstab
+                UUID    /mnt/data1      ext4    defaults    0   0
+            mount -av
+
+            parted /dev/sda mkpart primary ext4 25% 50%         # E.X. add partition with one command
+            parted /dev/sda rm 2                                # remove partition 2
+
+        ## resize partition
+            umount /mnt/data
+            parted /dev/sda 
+                resizepart 1 40%
+
+            resize2fs /dev/sda1             # if using another filesystem then >> use xfs_growfs command
+            mount /dev/sda1 /mnt/data1
+            systemctl daemon-reload
+
+        --------------------------------------
+
         @LVM
+
+        yum install lvm2 -y                 # install LVM package
 
         ## Create LVM lv1 setup using one physical device 50G and mount it to /mnt/data
             pvcreate    /dev/sdb                            # create physical volume
@@ -107,6 +138,36 @@
             vgremove    vg_data
             pvremove    /dev/sdc    /dev/sdd
 
+        --------------------------------------
+
+        @STRATIS
+
+        yum install stratisd stratis-cli -y
+        systemctl start  stratisd
+        systemctl enable stratisd
+
+        ## create stratis pool & create filesystem
+            stratis pool create pool1 /dev/sda                  # create a pool
+            stratis pool list
+            stratis filesystem create pool1 fs1                 # create filesystem
+            stratis filesystem list
+            mount    /dev/stratis/pool1/fs1     /pool1_data
+
+            # for permanent
+            vim /etc/fstab
+                UUID    /pool1_data     xfs    defaults,x-systemd.requires=stratisd.service    0   0
+            systemctl daemon-reload
+            mount -av
+
+        stratis pool add-data pool /dev/sdb                 # extend existing pool
+        stratic filesystem snapshot pool1 fs1 snap1         # create a snapshot of filesystem
+            mount /dev/stratis/pool1/snap1  /pool1_data     # mount snapshot if filesystem corrupted
+
+        ## delete pool
+            umount /pool1_data
+            stratis filesystem destroy pool1 fs1            # delete filesystem
+            stratis pool destroy pool1                      # delete pool
+            wipefs  -a  /dev/sda                            # clean up 
 
     }
 
@@ -450,6 +511,9 @@
 
 ## Firewalld
     {
+        yum install firewalld
+        systemctl start firewalld
+
         #adding http to firewall
         ##note any command will be applied to default zone -public-,
         ##if we need to apply commands to different zones will added --zone=public to command.
@@ -545,12 +609,12 @@
 
         yum install nfs-utils
 
-        showmount -e $SERVER_IP                 #to know the shared directories
+        showmount -e $SERVER_IP         # to know the shared directories
 
-        ## assume we create a directory /test-data for mount point
+        mkdir /test-point               # for mount point
 
         #on runtime method
-        mount -t nfs4   $SERVER_IP:/data    /test-data  >>  
+        mount -t nfs4   $SERVER_IP:/data    /test-data   
 
         #for permanent
         vim /etc/fstab
