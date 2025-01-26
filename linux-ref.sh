@@ -140,6 +140,25 @@
 
         --------------------------------------
 
+        @VDO    # with LVM to optimize storage by deduplicating, compressing, and managing logical volumes.
+
+        yum install vdo kmod-kvdo -y
+
+        ## E.X.
+            pvcreate    /dev/sdb                            
+            vgcreate    vg_vdo    /dev/sdb                 
+            lvcreate    --type vdo -n lv_vdo  -L 50G  vg_vdo             
+            mkfs -t ext4 /dev/vg_vdo/lv_vdo                  
+            mount /dev/vg_vdo/lv_vdo  /data_vdo
+
+        vdostats
+
+        lvs -o lv_name,vdo_compression,vdo_deduplication            # check if compression and deduplication enabled or disabled
+        lvchange --compression   n /dev/vg_vdo/lv_vdo               # enable/disable it (n/y)
+        lvchange --deduplication n /dev/vg_vdo/lv_vdo
+
+        --------------------------------------
+
         @STRATIS
 
         yum install stratisd stratis-cli -y
@@ -585,7 +604,7 @@
     {
         @SERVER
 
-        yum install nfs-utils
+        yum install nfs-utils -y
         systemctl enable    nfs-server.service
         systemctl start     nfs-server.service
 
@@ -619,6 +638,7 @@
         #for permanent
         vim /etc/fstab
             $SERVER_IP:/data    /test-data      nfs4    defaults    0   0
+        mount-a
 
         df -h 
 
@@ -656,6 +676,69 @@
             *      -rw,sync    $SERVER_IP:/data/&          
 
         systemctl restart autofs.service
+    }
+
+**************************************
+
+## Samba
+    {
+        @SERVER
+
+        yum install samba samba-client samba-common -y
+        systemctl enable smb nmb
+        systemctl start  smb nmb
+
+        firewall-cmd --add-service=samba      --permanent
+        firewall-cmd --reload
+
+        mkdir /samba_share
+        chown nobody:nobody /samba_share
+
+        vim /etc/samba/smb.conf                 # edit config. for shared directory
+            [samba_share]
+            comment = this is a comment
+            path = /samba_share
+            browseable = yes
+            public = yes
+            read only = yes
+            guest ok = yes
+            # valid users = samba_user
+            # valid users = @group1
+            # hosts allow = 192.168.1.0/24
+            # hosts deny  = 10.20.30.0/24
+
+        testparm                                # check config. file syntax
+        systemctl restart smb
+
+        semanage fcontext -a -t samba_share_t "/samba_share(/.*)?"      # change context for shared directory >> IMPORTANT!!!
+        restorecon -R /samba_share
+        setsebool  -P samba_enable_home_dirs on                         # Allows Samba to share users' home directories.
+        setsebool  -P samba_export_all_rw    on                         # Allows Samba to share all files with read-write perm.
+
+        useradd   -s /sbin/nologin samba_user                           # create user without shell.
+        smbpasswd -a samba_user                                         # set password for samba_user to access samba server from client.
+        smbpasswd -e samba_user                                         # enable samba_user
+        systemctl restart smb
+
+        @CLIENT
+
+        ## linux client
+            yum install samba-client cifs-utils -y
+            smbclient -L //$SERVER_IP                   # list shared dirs. from samba server >> don't enter password.
+            
+            mkdir -p /samba_data
+            mount -t cifs //$SERVER_IP/samba_share /samba_data -o username=samba_user
+
+            #for permanent
+            vim /etc/fstab
+                //$SERVER_IP/samba_share    /samba_data      cifs    username=samba_user,password=123,defaults    0   0
+            mount -a
+
+        ## windows client
+            # 1- press WINDOWS + R
+            # 2- type   \\$SERVER_IP\samba_share
+            # 3- type   samba_user & password
+
     }
 
 **************************************
