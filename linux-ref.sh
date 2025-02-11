@@ -1,10 +1,3 @@
-## Firewalld
-    {
-        
-    }
-
-**************************************
-
 ## Storage
     {
         @fdisk
@@ -276,6 +269,7 @@
             ip addr
             ip route
             netstat -nr
+            curl ifconfig.me        # show server public ip
 
         /etc/NetworkManager/system-connections      # where NetworkManager stores configuration files for network connections.
 
@@ -299,15 +293,19 @@
             nmcli con reload test-con                        # if it isn't affected then do >> nmcli con down test-con & nmcli con up test-con
 
         # Network Troubleshooting
-            ifconfig -a                 # check physical connection
+            ifconfig -a                 # check physical connection same as >> ip a
             ethtool  [interface]
             mii-tool [interface]
                 # o/p should be link ok.
 
-            route -n                    # show route table and should specify default gateway
+            ip route                    # shows routes and default gateway same as >> route -n
                 route add default gw 192.168.1.1        # if default gw not exist
 
-            try ping google.com         # should response if not do next step
+            ping       google.com       # check if server is reachable, if not try also 8.8.8.8
+            traceroute google.com       # check the path that data takes and where problems might be occurring
+            nslookup   google.com       # check if DNS resolved to ip correctly or not
+            dig        ggole.com        # for DNS more details
+
             vim /etc/resolve.conf
                 - nameserver 8.8.8.8
 
@@ -326,6 +324,7 @@
         #2- add slaves NICs to Bond at least 2 NICs
         nmcli conn add type ethernet port-type bond con-name bond0-port1 ifname enp0s3 controller bond0
         nmcli conn add type ethernet port-type bond con-name bond0-port2 ifname enp0s8 controller bond0
+        or
 
         nmcli conn modify bridge0 controller bond0  # if there are profiles for slaves
         nmcli conn modify bridge1 controller bond0
@@ -692,7 +691,7 @@
         firewall-cmd --reload
 
         mkdir /samba_share
-        chown nobody:nobody /samba_share
+        chown nobody:nobody /samba_share        # if needed.
 
         vim /etc/samba/smb.conf                 # edit config. for shared directory
             [samba_share]
@@ -720,10 +719,12 @@
         smbpasswd -e samba_user                                         # enable samba_user
         systemctl restart smb
 
+        --------------------------------------
+
         @CLIENT
 
         ## linux client
-            yum install samba-client cifs-utils -y
+            yum install samba-client cifs-utils -y      # CIFS is used by Linux clients to mount and access Samba shares on a Samba server.
             smbclient -L //$SERVER_IP                   # list shared dirs. from samba server >> don't enter password.
             
             mkdir -p /samba_data
@@ -739,6 +740,254 @@
             # 2- type   \\$SERVER_IP\samba_share
             # 3- type   samba_user & password
 
+    }
+
+**************************************
+
+## FTP
+    {
+        @SERVER
+
+        yum install vsftpd -y
+        systemctl enable vsftpd
+        systemctl start  vsftpd
+
+        firewall-cmd --add-service=ftp --permanent
+        firewall-cmd --reload
+
+        cp  /etc/vsftpd/vsftpd.conf  /etc/vsftpd/vsftpd.conf.backup   # create a backup first
+        vim /etc/vsftpd/vsftpd.conf
+            
+            anonymous_enable=NO                 # Prevents anonymous users from logging in to FTP server
+            local_enable=YES                    # allow local users
+            write_enable=YES                    # allow logged-in user to upload files to FTP server
+            
+            # by default local users can change there directory >> IMPORTANT!!!
+            chroot_local_user=YES               # restrict access to everything except the home directory
+                chroot_list_enable=YES          # If set to YES, you can specify a list of users who will be excluded from chrooting (if chroot_local_user=YES) or included in chrooting (if chroot_local_user=NO).
+                chroot_list_file=/etc/vsftpd/chroot_list        # contains the list of users to be included or excluded from chrooting, depending on the chroot_local_user setting.
+                allow_writeable_chroot=YES      # to work correctly if user home directory have write perm.
+
+            # passive mode >> provides client with a range of ports it can use to establish the data connection. (required when FTP server is behind a firewall or NAT).            
+            pasv_enable=YES
+            pasv_address=$SERVER_IP
+            pasv_min_port=10000
+            pasv_max_port=10100
+            firewall-cmd --add-port=10000-10100/tcp --permanent
+            firewall-cmd --reload
+            
+            # This create an approved user list only 
+            userlist_enable=YES
+            userlist_file=/etc/vsftpd/user_list
+            userlist_deny=NO                    # if this YES >> would change the list to blocked users.
+
+        setsebool -P ftpd_full_access on
+        sudo systemctl restart vsftpd
+
+        --------------------------------------
+
+        @CLIENT
+
+        yum install ftp -y
+        ftp $SERVER_IP              # then login with username and password
+            passive                 # write passive to enter passive mode
+
+    }
+
+**************************************
+
+## DHCP
+    {
+        @SERVER
+
+        yum install dhcp-server -y
+        systemctl enable dhcpd
+        systemctl start  dhcpd
+
+        firewall-cmd --add-service=dhcp --permanent
+        firewall-cmd --reload
+
+        ## NOTE >> maybe service status is enabled but failed.
+
+        vim /etc/dhcp/dhcpd.conf                             # didn't found anything >> so look at the Examples boooy!
+        vim /usr/share/doc/dhcp-server/dhcpd.conf.example    # example with all details ^_^
+        
+        vim /etc/dhcp/dhcpd.conf
+            # IMPORTANT!!! >>> this is a global will apply to all subnets. >> default values if not specified in subnet.
+            option domain-name "server.com";
+            option domain-name-servers 208.67.222.222, 208.67.220.220, ns1.mansi.com;
+
+            default-lease-time 7200;
+            max-lease-time 10800;
+
+            authoritative;          # If this DHCP server is the official DHCP server
+
+            # Use this to send dhcp log messages to a different log file (you also
+            # have to hack syslog.conf to complete the redirection).
+            log-facility local7;
+
+            # configuration for an internal subnet only.
+            subnet 192.168.1.0 netmask 255.255.255.0 {
+                range  192.168.1.150 192.168.1.250;
+                option domain-name-servers 8.8.8.8;
+                option routers 192.168.1.1;                 # Default Gateway
+                option broadcast-address 192.168.1.255;
+                default-lease-time 600;                     # 
+                max-lease-time 7200;
+            }
+
+        @CLIENT
+
+        yum install dhcp-client -y
+        cat /var/lib/dhclient/dhclient.leases               # show details about lease history. 
+
+        dhclient            # request new ip from dhcp
+        dhclient -r         # remove current ip & notify dhcp server that ip is free
+        dhclient -v         # renew current IP (verbose mode)
+
+        # (Deletes old leases and forces a fresh IP request.)
+            rm -f /var/lib/dhclient/dhclient.leases
+            dhclient -v
+
+    }
+
+**************************************
+
+## DNS
+    {
+        @BIND
+
+        @SERVER
+
+        yum install bind bind-chroot bind-utils -y                  # bind > dns implementation, bind-chroot > (jailed) environment, which isolates it from the rest of the system, bind-utils > DNS client tools for testing and troubleshooting.
+        firewall-cmd --add-service=dns --permanent
+        firewall-cmd --reload
+
+        # if DNS not in jailed environment
+        cat /var/named/named.ca             # contain records for 13 root servers
+        cat /etc/named.conf                 # main bind config file
+        ls /var/named/                      # for data files
+
+        # to enable jail environment        >>      / == /var/named/chroot
+        systemctl disable named                         
+        systemctl stop named
+        systemctl mask named
+
+        cd /var/named/chroot
+        cp -r /usr/share/doc/bind/sample/etc/ .                     # copy config. files to chroot directory
+        cp -r /usr/share/doc/bind/sample/var/ .                     # copy data. files to chroot directory
+        chown named:named -R /var/named/chroot/var/named/
+        systemctl restart named-chroot
+
+        vim /etc/named.conf
+                #    listen-on port 53 { 127.0.0.1; 192.168.1.146; };
+                #    allow-query       { localhost; 192.168.1.0/24; };
+
+        named-checkconf                 # check config. file syntax
+        systemctl restart named-chroot
+
+        ## IMPORTANT!!! >> service files should be owned by "named" service user
+            cd /var/named/chroot
+            chown root:named  -R /etc/
+            chown root:named  -R /var/
+            restorecon -Rv /var/named/chroot
+
+        @CLIENT
+
+        nmcli connection modify enp0s3 ipv4.dns $SERVER_IP          # edit dns with dns local server ip
+        nmcli connection down enp0s3
+        nmcli connection up   enp0s3
+        
+        @SERVER 
+        
+        tcpdump udp dst port 53         # configure client server then test if client server use this local dns server ^_^
+        
+        --------------------------------------
+
+        ## Logging >> storing dns query logs
+
+            rndc querylog                   # enable or disable query logging in BIND >> to /var/log/messages (TEMPORARY!!!)
+                                            # just for testing only
+            # for permanent
+                vim /etc/named.conf
+                    
+                    logging {
+                            channel default_debug {
+                                    file "data/named.run";
+                                    severity dynamic;
+                            };
+                            channel queries_channel {
+                                    file "data/queries.log" versions 5 size 5M;
+                                    print-time yes;
+                                    print-category yes;
+                                    severity dynamic;
+                            };
+                            channel errors_channel {
+                                    file "data/errors.log";
+                                    print-time yes;
+                                    print-category yes;
+                                    severity dynamic;
+                            };
+                            category queries { queries_channel; };          # "queries" for all logs
+                            category default { errors_channel; };           # "default" for error logs, "network" for network logs, ...
+                    };
+
+                systemctl restart named-chroot
+                # check logs under /var/named/chroot/var/named/data
+
+        ## NOTE: with main configuration file use INCLUDE statement as much as you can.
+        #        so we can write logging statement in separate file then include it in main configuration file /etc/named.conf
+
+        --------------------------------------
+        
+        ## Zones
+
+        # E.X.  >>  define forward lookup and reverse lookup zones for "mansi.com" & subnet >> 192.168.1.0/24
+            # forward lookup >> translate domain name into ip
+                zone "mansi.com" IN {
+                    type master;
+                    file "/var/named/mansi.com.forward";
+                    allow_query { 192.168.1.0/24; };
+                };
+
+            # reverse lookup >> translate ip into domain name
+                zone "0.168.192.in-addr.arpa" IN {
+                    type master;
+                    file "/var/named/mansi.com.reverse";
+                    allow_query { 192.168.1.0/24; };
+                };
+
+
+        # Assign records to previous forward E.X.
+            cd /var/named/chroot/var/named                  # as we use named-chroot
+            cp named.localhost  mansi.com.forward           # copy config. example with forward file name then edit it according to your needs
+            vim mansi.com.forward
+                
+                $TTL 1D                                                         # cache time value is 1 day
+                @       IN SOA  ns0.mansi.com. admin.mansi.com. (               # define domain with started @ line, take care of dots (.)
+                                                        0       ; serial
+                                                        1D      ; refresh
+                                                        1H      ; retry
+                                                        1W      ; expire
+                                                        3H )    ; minimum
+                        NS      ns0.mansi.com.                                  # define nameserver
+                ns0     A       192.168.1.146
+
+                ## Note: we define nameserver with two steps. IMPORTANT!!! like mail server also.
+
+        named-checkzone mansi.com /var/named/mansi.com.forward          # check zone configuration
+        dig @192.168.1.146 ns0.mansi.com                                # should work also ^_^
+
+
+    }
+
+**************************************
+
+## Chronyd (NTP)
+    {
+        https://www.youtube.com/watch?v=dUK1CfjuNfA
+        https://www.youtube.com/watch?v=XjBcnpKgMJg
+        https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/automating_system_administration_by_using_rhel_system_roles/configuring-time-synchronization-by-using-the-timesync-rhel-system-role_automating-system-administration-by-using-rhel-system-roles#configuring-time-synchronization-by-using-the-timesync-rhel-system-role_automating-system-administration-by-using-rhel-system-roles
     }
 
 **************************************
