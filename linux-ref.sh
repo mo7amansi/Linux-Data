@@ -545,10 +545,10 @@
         vim /usr/lib/firewalld/zones 
 
         ##rich rules
-        #accept traffic from specific source 
-        firewall-cmd --zone=public --add-rich-rule='rule-family="ipv4" source address="192.168.1.10/24" service name="http" accept'
-        #drop traffic from specific source 
-        firewall-cmd --zone=public --add-rich-rule='rule-family="ipv4" source address="192.168.1.10/24" service name="http" drop'
+            #accept traffic from specific source 
+            firewall-cmd --zone=public --add-rich-rule='rule-family="ipv4" source address="192.168.1.10/24" service name="http" accept'
+            #drop traffic from specific source 
+            firewall-cmd --zone=public --add-rich-rule='rule-family="ipv4" source address="192.168.1.10/24" service name="http" drop'
 
     }
 
@@ -985,9 +985,46 @@
 
 ## Chronyd (NTP)
     {
-        https://www.youtube.com/watch?v=dUK1CfjuNfA
-        https://www.youtube.com/watch?v=XjBcnpKgMJg
-        https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/automating_system_administration_by_using_rhel_system_roles/configuring-time-synchronization-by-using-the-timesync-rhel-system-role_automating-system-administration-by-using-rhel-system-roles#configuring-time-synchronization-by-using-the-timesync-rhel-system-role_automating-system-administration-by-using-rhel-system-roles
+        @SERVER
+
+        yum install chrony -y
+        systemctl enable chronyd
+        systemctl start  chronyd
+        firewall-cmd --add-service=ntp --permanent
+        firewall-cmd --reload
+
+        vim /etc/chrony.conf
+            allow 192.168.1.0/24                    # allow clients from this subnet to use NTP server
+
+        systemctl restart chronyd
+
+        @CLIENT
+
+        yum install chrony -y
+        systemctl enable chronyd
+        systemctl start  chronyd
+
+        vim /etc/chrony.conf
+            server $SERVER_IP iburst                # use this NTP server instead of public servers
+
+        systemctl restart chronyd
+
+        --------------------------------------
+
+        @VERIFYING
+
+        chronyc tracking                # Check time sync. status
+        chronyc sources -v              # Check NTP Sources
+
+        --------------------------------------
+
+        ## enable chrony log files
+            vim /etc/chrony.conf
+                logdir /var/log/chrony
+                log measurements statistics tracking
+
+            systemctl restart chronyd
+        
     }
 
 **************************************
